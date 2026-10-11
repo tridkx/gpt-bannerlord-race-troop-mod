@@ -34,7 +34,7 @@
 </base>
 ```
 
-这是文件加载例证，不是完整模块模板。不要猜一个 `<XmlName id="skins">` 就能加载 skin；读取本机 Native 和可用工程确认当前规则。Monster/NPCCharacters 在参考模块中还使用 SubModule.xml 的相应入口。DLL 不是纯数据种族的必需项；参考 DLL 只用于诊断。
+这是文件加载例证，不是完整模块模板。不要猜一个 `<XmlName id="skins">` 就能加载 skin；读取本机 Native 和可用工程确认当前规则。Monster/NPCCharacters 在参考模块中还使用 SubModule.xml 的相应入口。是否需要运行时 DLL 由实际加载和 UI 创建路径决定；纯数据注册可满足的种族不额外加 DLL，自定义骨架需要 UI 适配时按下述制作规范实现。
 
 ## 皮肤构建
 
@@ -54,8 +54,50 @@
 - 沿用原生骨架语义与动作，先检查站立、跑步、持剑、持弓、骑乘等相关动作；手部形变、布料求解、IK 和碰撞另行验证。28 骨是当前 human 样本，不是所有生物通用骨数。
 - 布料参数应按当前模型拟合；最终包需有匹配的预处理数据。读取装备技能的布料参考，不直接把 Wudu 或天香的胶囊、顶点编号和活动距离复制到新模型。
 
+## 捏脸与人物预览制作规范
+
+使用自定义绑定骨架时，把捏脸和站立人物预览纳入首次制作范围。每个 UI 创建或重建入口都必须使用与当前种族、性别和绑定骨架匹配的动作集；预览重建后仍保持正确的局部绑定坐标、位置、缩放和动作进度。战场显示正常不能替代这个要求，也不能通过把源模型四肢拉伸到 human 骨架来满足预览。
+
+### 配置动作集并覆盖创建与重建
+
+从当前游戏 DLL/XML 确定界面实际使用的入口和后缀，为任务骨架注册所需男女动作集；保留所选性别，不为固定外观角色擅自强制女性 SkeletonType。检查动作集有效且其 skeleton 引用指向任务骨架。沿用原生动作轨道时，也要让 UI 通过自己的动作集使用自己的绑定骨架。
+
+本机 Native v1.4.8 的入口与动作如下；未来版本需重新核对，不将本表当作固定接口：
+
+| 入口 | 动作集与动作 |
+| --- | --- |
+| `BodyGeneratorView` 捏脸初次创建 | 通过 `MBGlobals.GetActionSetWithSuffix(monster, isFemale, "_facegen")` 选集；通道 1 使用 `act_inventory_idle_start` → `act_inventory_idle`。原生女性 facegen 集的动画片段为 `anim_female_custom_start` → `anim_female_custom`，对应骨骼动画 `anim_female_idle_long` |
+| `BodyGeneratorView` 捏脸重建 | 该版本重建的 `AgentVisualsData` 未传 `.ActionSet(...)`，默认动作集索引 0 会落到 `as_human_warrior`。必须在此路径提供或恢复当前种族动作集，不能只修初次创建 |
+| `CharacterTableau` 站立人物预览 | 默认选 `_warrior` 集，动作同为 `act_inventory_idle_start` → `act_inventory_idle`，片段 `inventory_idle_start` → `inventory_idle` 使用 `anim_inventory_idle`；显式 `IdleAction` 或其他指定动画可覆盖默认动作 |
+| `BasicCharacterTableau` 旧预览入口 | 使用 `GetHardcodedAnimationSystemDataForHumanSkeleton`；若目标界面实际走此入口，要单独适配，不能假定所有预览都走 `CharacterTableau` |
+
+该版本动作集名由 `ActionSetCode.GenerateActionSetNameWithSuffix` 生成：`as_` +（非空 `Monster.BaseMonster`，否则 `Monster.StringId`）+ 女性时的 `_female` + 后缀。核对最终生成名称与注册项，不只看 Monster 的 `action_set` 字段。捏脸切换性别、年龄、身体参数、衣着或其他引起人物重建的操作后，仍须使用匹配的集；衣着关闭时 Equipment 可为空。
+
+### 实现完整的 UI 骨架重建
+
+优先在可控制的创建／重建入口明确传入正确的 ActionSet。原生入口不能直接配置时，将 UI 适配作为正式运行模块实现并随模组交付，和只读诊断模式分开。处理范围限定为当前任务种族的 UI `AgentVisuals`，跳过 MissionScreen、战场 Agent、其他种族以及已使用正确骨架的对象。
+
+重建前保存原人物数据、实体位置和朝向、缩放、通道 0/1 的动作与进度。用原数据副本只改必要字段，保留 race、Monster、SkeletonType、装备、身体参数及 MorphAnims 等原设置。动作集无效或骨架引用不匹配时停止本次适配并记录原因，不退回 human 集继续运行。
+
+Native v1.4.8 的 `AgentVisuals.Refresh` 在旧装备非空且武器未变时可能跳过骨架创建；仅换 ActionSet 或调用普通刷新不能保证换掉旧骨架。已验证的完整重建调用顺序是：
+
+1. 在写入前确认私有 `_data` 字段与 `Refresh(bool, bool, Equipment, bool, bool)` 方法存在。版本不匹配时不修改对象。
+2. 通过 `GetCopyAgentVisualsData()` 保留原数据。保存 `GetScale()` 与实体 `GetFrame()`；Frame 的 rotation 先按 `1 / scale` 去除已有缩放，再设置 `.ActionSet(ownSet).Frame(unscaledFrame).Scale(scale)`，避免二次缩放。
+3. 写入 `_data`，调用 `Refresh(false, true, null, false, false)`；`removeSkeleton=true` 且 `oldEquipment=null` 用于完整重建，不表示清空人物原数据中的装备。
+4. 在新骨架上恢复两条通道中非 `act_none` 的动作及原进度，再调用 `TickAnimationsAndForceUpdate` 更新姿态。保留原实体变换，不使人物跳位或动画重置。
+
+私有成员方案仅适用于已核对的版本；升级时重新检查接口和分支语义。运行检查应限制扫描范围与日志数量，重复处理保持幂等，日志失败不影响游戏。此处规定结果与关键数据保留，不要求所有工程复制同一种扫描架构或艾达的 ID、骨架尺寸与检查间隔。
+
+### 首次交付的 UI 验收
+
+离线阶段核对动作集解析名称、全部创建／重建入口及最终绑定骨架；用户游戏阶段覆盖捏脸初次显示和重建、队伍／百科／物品栏站立预览，以及穿脱装备后恢复待机。记录实际 race、Monster、SkeletonType、ActionSet 名称及 skeleton 引用、实体骨架名称、局部 rest frame、两条动画通道和进度；不要只记录骨数或 XML 声明。观察肩臂、袖口与手腕连接，同时检查缩放、位置和动画连续性。没有捏脸形变功能的固定脸种族，也要验证创建页面的显示与重建。
+
+把离线检查、运行时记录和用户实机反馈分别写入工程报告；未测试界面不记为通过。纯 UI 适配应核对 TPAC、源模型、绑定数据和权重保持不变，并回归战场行为。通过本流程避免为 UI 的错误骨架重绑完整身体。
+
+本机实现参照：`D:/gpt-mb2-mod2/mods/ResidentEvil/REAdaWongRace/tools/UIProbe/Probe.cs`。REAdaWongRace v0.1.3 在 Native v1.4.8 中采用上述完整重建方式；2026-10-11 用户确认捏脸与待机预览修复完成。该例证支持 UI 骨架适配方法，不代表所有性别／年龄分支、手势形变、战场 IK 或性能均已验证。
+
 ## 最终检查重点
 
-确认每个任务兵种选择的 race/gender/age 能找到皮肤与 Monster；每个身体/动作/骨架引用确实在当前加载集合中。检查最终 TPAC 的身体组成，确认双手或头部没有在拆分时从所有实际显示路径移除。
+确认每个任务兵种选择的 race/gender/age 能找到皮肤与 Monster；每个身体/动作/骨架引用确实在当前加载集合中。检查最终 TPAC 的身体组成，确认双手或头部没有在拆分时从所有实际显示路径移除。使用自定义骨架时，按[捏脸与人物预览制作规范](#捏脸与人物预览制作规范)完成 UI 创建、重建及站立预览检查，记录各界面验证范围。
 
 记录当前游戏版本、目标兵种、原始输入哈希、最终包哈希、尺寸定义、实际生效的模块文件及用户已验收范围。使用新 ID 的种族或兵种要保留测试存档的依赖说明，不擅自重命名已发布 ID。
