@@ -1,0 +1,3 @@
+interface:
+  display_name: "骑砍2自定义种族与兵种树"
+  short_description: "制作骑砍2自定义种族、完整角色替换和兵种树，处理注册、加载与升级回归"
