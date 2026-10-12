@@ -68,14 +68,30 @@
 | --- | --- |
 | `BodyGeneratorView` 捏脸初次创建 | 通过 `MBGlobals.GetActionSetWithSuffix(monster, isFemale, "_facegen")` 选集；通道 1 使用 `act_inventory_idle_start` → `act_inventory_idle`。原生女性 facegen 集的动画片段为 `anim_female_custom_start` → `anim_female_custom`，对应骨骼动画 `anim_female_idle_long` |
 | `BodyGeneratorView` 捏脸重建 | 该版本重建的 `AgentVisualsData` 未传 `.ActionSet(...)`，默认动作集索引 0 会落到 `as_human_warrior`。必须在此路径提供或恢复当前种族动作集，不能只修初次创建 |
-| `CharacterTableau` 站立人物预览 | 默认选 `_warrior` 集，动作同为 `act_inventory_idle_start` → `act_inventory_idle`，片段 `inventory_idle_start` → `inventory_idle` 使用 `anim_inventory_idle`；显式 `IdleAction` 或其他指定动画可覆盖默认动作 |
+| `CharacterTableau` 站立人物预览 | 默认选 `_warrior` 集，默认动作 `act_inventory_idle_start` → `act_inventory_idle`。原版片段 `inventory_idle_start` → `inventory_idle` 使用 `anim_inventory_idle`；这是原版默认映射，不是自定义角色必须采用的自然垂手姿态。显式 `IdleAction` 或自有动作集内的 action 覆盖可改变预览待机 |
 | `BasicCharacterTableau` 旧预览入口 | 使用 `GetHardcodedAnimationSystemDataForHumanSkeleton`；若目标界面实际走此入口，要单独适配，不能假定所有预览都走 `CharacterTableau` |
 
 该版本动作集名由 `ActionSetCode.GenerateActionSetNameWithSuffix` 生成：`as_` +（非空 `Monster.BaseMonster`，否则 `Monster.StringId`）+ 女性时的 `_female` + 后缀。核对最终生成名称与注册项，不只看 Monster 的 `action_set` 字段。捏脸切换性别、年龄、身体参数、衣着或其他引起人物重建的操作后，仍须使用匹配的集；衣着关闭时 Equipment 可为空。
 
+### 物品栏背手与待机选择
+
+角色在物品栏把手臂背到身后时，先记录实际 ActionSet、通道 0/1 的 action、动画片段和进度；与创建页面使用的 `_facegen` 集分别检查。不要因为动作名含 `inventory_idle` 就断言它是双手自然垂落，也不要为改物品栏姿态更改已验收的创建页面动作。
+
+先证明诊断或适配确实到达人物对象：本机 v1.4.8 的物品栏入口为 `CharacterTableauWidget.TextureProvider` → `CharacterTableauTextureProvider._characterTableau` → 预览 AgentVisuals。物品栏有大量商品控件，宽泛反射遍历可能先耗尽对象预算；日志出现 `visuals=0` 时不能判定预览已使用正确骨架。优先读取明确的预览提供器，使用独立遍历预算，保留地图/战场及未知 owner 的排除条件；不以提高全局扫描深度代替正确入口。采样额度按界面分配，避免创建页面耗尽物品栏诊断额度；ActionIndexCache 使用 `GetName()`，默认 `ToString()` 不提供动作名。骨架名称正确仍要核对 ActionSet，不能仅凭骨架同名跳过动作集修复。
+
+明确的 tableau 入口优先直接读取类型为 AgentVisuals 的字段，不遍历它的动作、场景或其他状态。需要反射遍历时，循环检测集合用对象引用身份，先排除值类型再加入集合；本机 `ActionIndexCache.Equals(object)` 会直接强制转换，装箱后进入默认 `HashSet<object>` 可因哈希冲突抛出 InvalidCastException，中止整个适配。辅助扫描异常不能丢弃已经找到的人物。离线回归应实际执行字段收集和遍历，包含装箱动作与自定义 Equals 的冲突案例；只测试入口查找或 owner 白名单不足以证明适配能执行。
+
+解析顺序为 UI 入口 → 动作集继承/覆盖 → action → AnimationClip → SkeletalAnimation GUID。片段名和骨骼动画名可能不同，播放区间、循环、过渡和手姿也属于片段配置；对同编号的 `troop_stand_unarmed_1` 与 `anim_unarmed_stand_idle_1` 直接配对会检查错资产。本机 v1.4.8 的前者实际引用 `anim_unarmed_stand_idle_4`。资源名不是跨版本契约。
+
+预览候选应检查整个待机循环中的肩、肘、腕，而非只看开始帧或网格边长最差帧。男性 facegen 的 `anim_male_custom` 在本机引用 `anim_guard_idle_long`，其中也有单臂后摆；不能因创建页面可用就断言它始终自然垂手。固定外观角色可以选择适合其造型的预览姿态，同时保留所选 SkeletonType/性别及其他入口动作；这是任务角色的选择，不擅自推广到其他种族。
+
+选择任务角色需要的垂手预览时，可以只在自己的男女 `_warrior` 集覆盖 `act_inventory_idle_start` 与 `act_inventory_idle`，保留其他动作和 `_facegen` 集。可评估对应性别的 facegen start/loop 片段作为候选，但必须先核对循环、过渡和最终身体的姿态，不能把此选择写成所有种族默认。本机男性 facegen 两个 action 均引用 `anim_male_custom`，不存在可直接拼出的 `anim_male_custom_start`；女性才有 `anim_female_custom_start` → `anim_female_custom`。从当前 XML 解析映射，不按后缀猜资源名。覆盖后回读 XML 继承结果，检查男女预览、穿脱装备后重建及动作恢复；游戏反馈按实际入口记录。
+
+已验证案例（2026-10-12，Native v1.4.8）：用户确认 TianxiangGirlT1Race v0.1.6 的物品栏背手问题修好。该版直接收集 tableau 人物字段、使用引用身份遍历，并在自有 warrior 集选择垂手候选。实际物品栏日志记录 `txgirl1_skeleton`、`as_txgirl1_warrior`、Male SkeletonType、通道 0 `act_inventory_idle_start` / `anim_female_custom_start`、通道 1 `act_none`，没有此前 Equals 异常。它证明该模型该入口可用，不推断所有性别、循环时段、武器或其他种族已通过；新模型复用入口处理与回归方法，重新选择/验证动作、骨架和模型参数。
+
 ### 实现完整的 UI 骨架重建
 
-优先在可控制的创建／重建入口明确传入正确的 ActionSet。原生入口不能直接配置时，将 UI 适配作为正式运行模块实现并随模组交付，和只读诊断模式分开。处理范围限定为当前任务种族的 UI `AgentVisuals`，跳过 MissionScreen、战场 Agent、其他种族以及已使用正确骨架的对象。
+优先在可控制的创建／重建入口明确传入正确的 ActionSet。原生入口不能直接配置时，将 UI 适配作为正式运行模块实现并随模组交付，和只读诊断模式分开。处理范围限定为当前任务种族的 UI `AgentVisuals`，跳过 MissionScreen、战场 Agent、其他种族以及骨架和所需动作集均正确的对象。
 
 重建前保存原人物数据、实体位置和朝向、缩放、通道 0/1 的动作与进度。用原数据副本只改必要字段，保留 race、Monster、SkeletonType、装备、身体参数及 MorphAnims 等原设置。动作集无效或骨架引用不匹配时停止本次适配并记录原因，不退回 human 集继续运行。
 
