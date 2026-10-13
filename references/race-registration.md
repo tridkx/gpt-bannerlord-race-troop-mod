@@ -51,14 +51,15 @@
 - 源网格与骨架统一转换单位和朝向，测人体本身与含头饰总高，记录定义；不将观察“到成人胸口”硬编码为通用米数。
 - 模型顶点尺寸、skin 的 min_scale、运行时 AgentScale、Monster 镜头与胶囊是不同因素。用同地面场景、骨骼头脚位置及全局变换判定实际高度；实体包围盒可能包含武器和布料。
 - 改 wrist 支点时核对前臂末端及扭转骨的连接关系，调整附近混合权重，保持非目标部位的世界绑定姿态。不要借手指任务重绑整个人体。
-- 沿用原生骨架语义与动作，先检查站立、跑步、持剑、持弓、骑乘等相关动作；手部形变、布料求解、IK 和碰撞另行验证。28 骨是当前 human 样本，不是所有生物通用骨数。
-- 布料参数应按当前模型拟合；最终包需有匹配的预处理数据。读取装备技能的布料参考，不直接把 Wudu 或天香的胶囊、顶点编号和活动距离复制到新模型。
+- 沿用原生骨架语义与动作，先检查站立、跑步、持剑、持弓、骑乘等相关动作；手部形变、IK 和碰撞按任务范围另行验证。28 骨是当前 human 样本，不是所有生物通用骨数。
 
 ## 捏脸与人物预览制作规范
 
 使用自定义绑定骨架时，把站立人物预览纳入首次制作范围；捏脸初次创建与重建仅在用户明确要求捏脸界面支持时纳入范围。默认不制作捏脸形变或面部表情动画。下述捏脸专用入口和适配步骤仅适用于已纳入范围的任务。每个纳入任务范围的 UI 创建或重建入口都必须使用与当前种族、性别和绑定骨架匹配的动作集；预览重建后仍保持正确的局部绑定坐标、位置、缩放和动作进度。战场显示正常不能替代这个要求，也不能通过把源模型四肢拉伸到 human 骨架来满足预览。
 
 ### 配置动作集并覆盖创建与重建
+
+骑砍 2 没有覆盖所有场景和界面的单一“角色默认待机”。解析链为 UI 创建入口 → ActionSet 及其继承/覆盖 → Action → AnimationClip → SkeletalAnimation → 骨架与蒙皮。Action 是动作请求，不是固定姿态；同一个 `act_inventory_idle` 在不同动作集中可以映射到不同片段。片段还定义播放区间、循环、过渡和手部形变，片段名不必等于骨骼动画资源名。源模型的 A/T 姿势或垂手静态姿势是绑定依据，不会自动成为游戏待机。机制来源见[官方动画说明](https://moddocs.bannerlord.com/asset-management/asset-types/animations/)，界面具体分支仍以当前 DLL/XML 为准。
 
 从当前游戏 DLL/XML 确定界面实际使用的入口和后缀，为任务骨架注册所需男女动作集；保留所选性别，不为固定外观角色擅自强制女性 SkeletonType。检查动作集有效且其 skeleton 引用指向任务骨架。沿用原生动作轨道时，也要让 UI 通过自己的动作集使用自己的绑定骨架。
 
@@ -69,11 +70,18 @@
 | `BodyGeneratorView` 捏脸初次创建 | 通过 `MBGlobals.GetActionSetWithSuffix(monster, isFemale, "_facegen")` 选集；通道 1 使用 `act_inventory_idle_start` → `act_inventory_idle`。原生女性 facegen 集的动画片段为 `anim_female_custom_start` → `anim_female_custom`，对应骨骼动画 `anim_female_idle_long` |
 | `BodyGeneratorView` 捏脸重建 | 该版本重建的 `AgentVisualsData` 未传 `.ActionSet(...)`，默认动作集索引 0 会落到 `as_human_warrior`。必须在此路径提供或恢复当前种族动作集，不能只修初次创建 |
 | `CharacterTableau` 站立人物预览 | 默认选 `_warrior` 集，默认动作 `act_inventory_idle_start` → `act_inventory_idle`。原版片段 `inventory_idle_start` → `inventory_idle` 使用 `anim_inventory_idle`；这是原版默认映射，不是自定义角色必须采用的自然垂手姿态。显式 `IdleAction` 或自有动作集内的 action 覆盖可改变预览待机 |
+| 百科兵种／兵种树所在页面的人物展示 | 本机 `EncyclopediaUnitPage.xml` 的 `UnitCharacter` 使用 `CharacterTableauWidget`，未显式绑定 `IdleAction`，因此沿用上述默认待机。可与物品栏共用自有 `_warrior` 集和适配逻辑；兵种树节点缩略图或其他版本入口须另查实际控件，不能全部假定走同一条路径 |
 | `BasicCharacterTableau` 旧预览入口 | 使用 `GetHardcodedAnimationSystemDataForHumanSkeleton`；若目标界面实际走此入口，要单独适配，不能假定所有预览都走 `CharacterTableau` |
+
+按入口验证，不按页面数制作重复动画：物品栏与百科人物若共用 `CharacterTableau`，可以共用动作映射和 UI 适配；捏脸使用 `_facegen`，修改 `_warrior` 不会同步修改它。初次创建正确仍须核对重建路径，切换衣着、性别或身体参数后可能重新创建人物并丢失 ActionSet。创建角色的出身选择、父母展示等不等同于捏脸入口，须核对各自请求的动作。战场 Agent 正常不证明 UI AgentVisuals 使用相同配置。
 
 该版本动作集名由 `ActionSetCode.GenerateActionSetNameWithSuffix` 生成：`as_` +（非空 `Monster.BaseMonster`，否则 `Monster.StringId`）+ 女性时的 `_female` + 后缀。核对最终生成名称与注册项，不只看 Monster 的 `action_set` 字段。捏脸切换性别、年龄、身体参数、衣着或其他引起人物重建的操作后，仍须使用匹配的集；衣着关闭时 Equipment 可为空。
 
 ### 物品栏背手与待机选择
+
+原版 `_warrior` 集的 `act_inventory_idle_start` / `act_inventory_idle` 对应 `inventory_idle_start` / `inventory_idle`，其展示姿态包含背手。自有集仅修改 ID 或 skeleton、仍继承 `as_human_warrior` 且未覆盖这两个 action 时，会继续使用该映射；这不是模型缺少动画后自动恢复静态姿势。原生 female warrior 也继承 human warrior，实际结果应沿继承链解析。
+
+区分两类问题：姿态连贯但双手背后，先核对动画内容与预览待机选择；手臂后折、内收或肩腕错位，则同时检查实际 ActionSet、骨架绑定方向和权重。正确动作集不代表所选动画是垂手，背手也不能单独证明骨架错误。UI 选错 human 集时优先修入口，不为适配错误集重绑模型；绑定本身错误时也不能只换待机掩盖问题。
 
 角色在物品栏把手臂背到身后时，先记录实际 ActionSet、通道 0/1 的 action、动画片段和进度；与创建页面使用的 `_facegen` 集分别检查。不要因为动作名含 `inventory_idle` 就断言它是双手自然垂落，也不要为改物品栏姿态更改已验收的创建页面动作。
 
