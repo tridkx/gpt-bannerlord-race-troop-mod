@@ -63,6 +63,8 @@ description: 制作或返修《骑马与砍杀2：霸主》自定义种族、完
 
 站立也有臀部穿裙时，读取装备技能的 [碰撞拟合与覆盖](../bannerlord-equipment-mod/references/cloth-collision.md#拟合与覆盖)；有光正常、暗处异常发黑时，读取 [材质控制通道排查](../bannerlord-equipment-mod/references/troubleshooting.md#有光正常暗处异常发黑)。完整角色种族同样适用这些检查，不通过改变源身体比例处理。
 
+完整角色中的镜片或玻璃有 Alpha 但游戏中不透明时，读取装备技能的[镜片与玻璃的连续透明](../bannerlord-equipment-mod/references/asset-workflow.md#镜片与玻璃的连续透明)。使用共用材质流程，保留角色比例、绑定骨架与非目标资源；材质透明验收与人物预览骨架适配分别记录。
+
 ## 官方来源与本机例证
 
 - [TaleWorlds Mod 文档](https://moddocs.bannerlord.com/)：模块与资产流程。
