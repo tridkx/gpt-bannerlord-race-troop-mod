@@ -20,6 +20,16 @@
 
 零号项是原版描述，不是自行给一个叫“none”的 mesh。参考工程直接深拷贝原版无 name 的首项，包括其内部标签；不要伪造未知 schema 的占位 XML。未来版本需要重新对照 Native。
 
+## 地图明暗频闪与动作集缺口
+
+画面区域忽明忽暗与地图小人反复消失是不同症状。先核对动态动作集名称与错误日志，注册机制见[场景动作集](race-registration.md#动作集批量注册与场景覆盖)。缺失 map／poses 是注册缺口，不足以认定为画面明暗频闪根因。按固定地点、镜头、时间做单变量对照：仅隐藏目标地图图标，再单独检查动态图影、材质、LOD 和反复置脏／重建；保留人物真实 Race 与属性。UI 预览修复跳过地图，不能把 tableau 的强制重建循环推广到地图 AgentVisuals。
+
+## 主角读档种族与装备外观
+
+本机 v1.4.8 的英雄加载经 `InitializeHeroBasicCharacterOnAfterLoad` 执行 `Race = originCharacter.Race`；运行时更改种族而原始模板仍是 human 时可能读档重置。XML 模板本身为自定义种族的英雄不能一概判断会重置。用户要求主角持久化时，用 CampaignBehavior.SyncData 保存稳定英雄标识与种族名称，加载后先恢复再采集；不只存会随模块顺序变化的整数索引，也不在 Tick 中持续强制赋值。旧档没有记录时不能推断原种族，同进程换档需清理会话缓存。参考[公开持久化实现](https://github.com/haterade22/TAOM/blob/bannerlord-1.4.5/Main/Features/HeroRace/RacePersistenceService.cs)，调用时序仍以当前游戏代码验证。存档列表的 BasicCharacterTableau 头像与实际加载 Hero.Race 分别检查。
+
+用户要求装备隐形但保留属性时，可评估有效不可见 CosmeticItem：原 Item／ItemModifier 提供护甲和重量，外观物品提供网格及部分身体遮盖。null 会回退原装备外观，不能表示隐藏；本机 CosmeticItem 没有直接保存标记，需要换装、读档及人物重建时重新应用。BodyMeshType、BodyDeformType 等仍有读取原装备的路径，须同时保护完整身体、头发和手部。优先作用于目标人物的渲染／生成副本，不改共享 ItemObject。地图、UI 与战场各自验证，不能把材质透明或删除实际装备当作完整实现。此项只在用户请求时实现，不因动作集注册任务自动新增。
+
 ## 朝向与身高
 
 先确定反馈来自战斗同地面、招募预览还是百科，检查源前向与最终顶点/骨架方向。多次旋转必须相对当前交付结果，不能在脚本中重复叠加。脸和身体方向应分开观察，不能凭脸朝后就只旋转头骨。

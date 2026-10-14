@@ -53,6 +53,32 @@
 - 改 wrist 支点时核对前臂末端及扭转骨的连接关系，调整附近混合权重，保持非目标部位的世界绑定姿态。不要借手指任务重绑整个人体。
 - 沿用原生骨架语义与动作，先检查站立、跑步、持剑、持弓、骑乘等相关动作；手部形变、IK 和碰撞按任务范围另行验证。28 骨是当前 human 样本，不是所有生物通用骨数。
 
+## 动作集批量注册与场景覆盖
+
+新种族默认从当前安装版本的 Native action_sets.xml 枚举 `as_human_*`，为本种族注册对应场景集：继承同后缀的原版集，显式引用当前自定义绑定骨架，不重新制作原版动画。不要将本机 v1.4.8 的 88 项目录数量或后缀名单硬编码成跨版本要求。用户只要有限用途时可缩小注册范围，但必须覆盖其实际入口；不批量改动任务以外的既有模组。
+
+名称按 `as_` +（非空 Monster.BaseMonster，否则 Monster.StringId）+ 女性时的 `_female` + 场景后缀生成。FaceGen 由 race 名查同名基础 Monster，检查每个派生 Monster 的 BaseMonster 与最终名称。Monster 显式 action_set 能解析，不证明动态名称也能解析。旧工程资源短前缀与 race ID 不同时，保留旧短名和运行组件引用，增加完整前缀集或兼容别名；不能为了名称匹配重命名已发布 race ID 或一律设置 BaseMonster=human。
+
+| 本机 v1.4.8 入口 | 需要核对的场景后缀 |
+| --- | --- |
+| MobilePartyVisual.AddCharacterToPartyIcon | 男女 `_map`、`_map_with_banner`，按旗帜状态分支 |
+| ConversationMissionLogic 人物生成 | `_poses`，包括 PlayerCharacter 的野外对话 |
+| HeroAgentSpawnCampaignBehavior | 领主 `_lord`；流浪者／同伴的 `_warrior_in_tavern`、`_warrior_in_aserai_tavern`；要人职业集 |
+| 城镇／村庄 NPC、营救囚犯及潜入角色 | `_child`、村民变体、守卫、反派、商贩、酒馆人员和搬运道具集，按角色分配验收 |
+
+本机 Native 只有 `as_human_poses`，没有 `as_human_female_poses`，对话调用却传入实际性别。批量生成时仅在对应女性基线不存在且共享 poses 存在的情况下，为自定义女性名称显式继承共享 poses，指向自有骨架；不虚构女性 base_set。该兼容注册仍须游戏验证，不能当作女性对话姿态已经通过。
+
+保持角色已选待机：生成完整前缀 warrior／facegen 等兼容集时继承或复制旧集的全部 action 覆盖；不能补齐集时恢复默认背手姿态。检查重复 ID、缺失动态名称、错误 skeleton、base_set 无法解析与继承环，并沿继承链比较新旧有效 action 映射。生成应幂等；升级 Native 时重新读取目录及调用入口。
+
+本机共用实现为 `D:/gpt-mb2-mod2/tools/race_action_sets.py`，可被模型的 register_module／verify_registration 脚本导入；源包需包含共用脚本，并保留 workspace_tools 恢复规则。不在技能目录或工作区另存该工具副本。工具不存在的其他工作区按上述规则实现，不依赖此绝对路径才能注册种族。
+
+```powershell
+python tools/race_action_sets.py --native "D:/SteamLibrary/steamapps/common/Mount & Blade II Bannerlord/Modules/Native/ModuleData/action_sets.xml" --actions "mods/<Series>/<ModId>/module/<ModId>/ModuleData/action_sets.xml" --prefix <实际Monster前缀> --skeleton <当前骨架> --legacy-prefix <旧动作集前缀> --report "mods/<Series>/<ModId>/reports/action_sets_validation.json"
+# 默认只检查；补齐注册时显式加 --write。新工程没有短名时省略 --legacy-prefix。
+```
+
+2026-10-14 调研核对：只注册 warrior、villager、facegen 六项不覆盖地图／对话及条件 NPC；仙剑7四种族存在短资源前缀与完整 Monster ID 不匹配。原生 MBGlobals 对无效动作集报告错误，不应假设自动回退 human。此结论是注册机制与离线缺口，不证明画面明暗频闪由缺集造成，也不覆盖其他补丁或原生内部别名。
+
 ## 捏脸与人物预览制作规范
 
 使用自定义绑定骨架时，把站立人物预览纳入首次制作范围；捏脸初次创建与重建仅在用户明确要求捏脸界面支持时纳入范围。默认不制作捏脸形变或面部表情动画。下述捏脸专用入口和适配步骤仅适用于已纳入范围的任务。每个纳入任务范围的 UI 创建或重建入口都必须使用与当前种族、性别和绑定骨架匹配的动作集；预览重建后仍保持正确的局部绑定坐标、位置、缩放和动作进度。战场显示正常不能替代这个要求，也不能通过把源模型四肢拉伸到 human 骨架来满足预览。
